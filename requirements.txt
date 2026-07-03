@@ -1,0 +1,7 @@
+beautifulsoup4
+playwright
+patchright
+requests
+urllib3
+Pillow
+pytesseract
