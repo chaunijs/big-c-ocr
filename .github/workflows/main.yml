@@ -1,7 +1,7 @@
 name: OCR Test Pipeline
 
 on:
-  workflow_dispatch: # Allows manual trigger from the GitHub Actions tab
+  workflow_dispatch: 
 
 jobs:
   test_ocr:
@@ -10,11 +10,6 @@ jobs:
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
-
-      - name: Install System Dependencies (Tesseract OCR)
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y tesseract-ocr tesseract-ocr-tha
 
       - name: Set up Python
         uses: actions/setup-python@v5

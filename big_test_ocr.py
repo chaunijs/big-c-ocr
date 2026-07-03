@@ -1,20 +1,19 @@
 import asyncio
 import io
 import re
-import sys
 import requests
 import urllib3
+import numpy as np
 from PIL import Image
 from bs4 import BeautifulSoup
-import pytesseract
+import easyocr
 from patchright.async_api import async_playwright
 
 # Suppress the insecure request warnings
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-# Set Tesseract path for Windows (Linux/GitHub Actions will ignore this and use system defaults)
-if sys.platform.startswith('win'):
-    pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
+print("🔄 Initializing EasyOCR Engine (This may take a moment to download models on first run)...")
+reader = easyocr.Reader(['en', 'th'])
 
 def get_condition_from_text(raw_text):
     """Maps raw OCR text to standardized promotional conditions."""
@@ -40,7 +39,6 @@ def get_condition_from_text(raw_text):
 
 async def test_multiple_urls_ocr(url_list):
     async with async_playwright() as p:
-        # Launch browser once
         browser = await p.chromium.launch(
             headless=True, 
             args=["--disable-blink-features=AutomationControlled"]
@@ -50,13 +48,11 @@ async def test_multiple_urls_ocr(url_list):
             print(f"\n🚀 Starting test for URL: {url}")
             badge_url = None
 
-            # Create an isolated context per URL
             context = await browser.new_context(
                 user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
                 viewport={"width": 1920, "height": 1080}
             )
             
-            # Inject English cookies
             await context.add_cookies([
                 {'name': 'language', 'value': 'en', 'domain': '.bigc.co.th', 'path': '/'},
                 {'name': 'NEXT_LOCALE', 'value': 'en', 'domain': '.bigc.co.th', 'path': '/'}
@@ -67,7 +63,7 @@ async def test_multiple_urls_ocr(url_list):
             try:
                 print("🌐 Loading webpage...")
                 await page.goto(url, wait_until="domcontentloaded", timeout=60000)
-                await asyncio.sleep(3) # Wait a moment for dynamic elements to load
+                await asyncio.sleep(3) 
                 
                 html_content = await page.content()
                 soup = BeautifulSoup(html_content, "html.parser")
@@ -87,10 +83,8 @@ async def test_multiple_urls_ocr(url_list):
             except Exception as e:
                 print(f"❌ Error scraping page: {e}")
             finally:
-                # Destroy context to wipe cache/cookies before next URL
                 await context.close()
 
-            # Process the badge with OCR if found
             if badge_url and badge_url != "null":
                 print("🔍 Downloading and processing image...")
                 try:
@@ -100,7 +94,6 @@ async def test_multiple_urls_ocr(url_list):
                     if response.status_code == 200:
                         img = Image.open(io.BytesIO(response.content))
                         
-                        # Handle palette/transparency
                         if img.mode in ("RGBA", "P"):
                             img = img.convert("RGBA")
                             background = Image.new("RGB", img.size, (255, 255, 255))
@@ -109,11 +102,14 @@ async def test_multiple_urls_ocr(url_list):
                         else:
                             img = img.convert("RGB")
 
-                        # Upscale by 4x for better Tesseract reading
                         img = img.resize((img.width * 4, img.height * 4), resample=Image.LANCZOS)
                         
-                        print("🧠 Running Tesseract OCR...")
-                        raw_text = pytesseract.image_to_string(img, lang='eng+tha')
+                        # Convert PIL Image to Numpy Array for EasyOCR
+                        img_array = np.array(img)
+                        
+                        print("🧠 Running EasyOCR...")
+                        results = reader.readtext(img_array)
+                        raw_text = " ".join([res[1] for res in results])
                         
                         print("-" * 40)
                         print(f"📄 RAW TEXT EXTRACTED : '{raw_text.strip()}'")
@@ -126,7 +122,6 @@ async def test_multiple_urls_ocr(url_list):
                 except Exception as e:
                     print(f"❌ Error processing image: {e}")
 
-        # Close main browser engine when all URLs are done
         await browser.close()
 
 if __name__ == "__main__":
