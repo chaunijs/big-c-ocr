@@ -18,7 +18,8 @@ jobs:
           cache: 'pip'
 
       - name: Install Python Dependencies
-        run: pip install -r requirements.txt
+        # Appended xlsxwriter to guarantee polars can write Excel files
+        run: pip install -r requirements.txt xlsxwriter
 
       - name: Install Playwright & Patchright Browsers
         run: |
@@ -29,3 +30,13 @@ jobs:
 
       - name: Run OCR Test Script
         run: python big_test_ocr.py
+
+      # New step to save the output files so you can download them
+      - name: Upload OCR Results
+        uses: actions/upload-artifact@v4
+        with:
+          name: ocr-results
+          path: |
+            ocr_results_*.xlsx
+            ocr_results_*.csv
+          retention-days: 7
