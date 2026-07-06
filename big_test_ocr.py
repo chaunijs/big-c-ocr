@@ -13,7 +13,8 @@ from patchright.async_api import async_playwright
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 print("🔄 Initializing EasyOCR Engine (This may take a moment to download models on first run)...")
-reader = easyocr.Reader(['en', 'th'])
+# FIX: Added gpu=False to force CPU execution
+reader = easyocr.Reader(['en', 'th'], gpu=False)
 
 def get_condition_from_text(raw_text):
     """Maps raw OCR text to standardized promotional conditions."""
