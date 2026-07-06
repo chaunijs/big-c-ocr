@@ -4,20 +4,25 @@ import re
 import requests
 import urllib3
 import numpy as np
+import datetime
 from PIL import Image
 from bs4 import BeautifulSoup
 import easyocr
+import polars as pl
 from patchright.async_api import async_playwright
 
 # Suppress the insecure request warnings
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 print("🔄 Initializing EasyOCR Engine (This may take a moment to download models on first run)...")
-# FIX: Added gpu=False to force CPU execution
+# Force CPU execution
 reader = easyocr.Reader(['en', 'th'], gpu=False)
 
 def get_condition_from_text(raw_text):
     """Maps raw OCR text to standardized promotional conditions."""
+    if not raw_text:
+        return None
+        
     t = raw_text.upper().replace(" ", "")
     t = t.replace("BUV", "BUY")
     digits = re.findall(r'\d', t)
@@ -39,6 +44,8 @@ def get_condition_from_text(raw_text):
     return raw_text.strip() if raw_text.strip() else None
 
 async def test_multiple_urls_ocr(url_list):
+    scraped_data = []
+
     async with async_playwright() as p:
         browser = await p.chromium.launch(
             headless=True, 
@@ -48,6 +55,8 @@ async def test_multiple_urls_ocr(url_list):
         for url in url_list:
             print(f"\n🚀 Starting test for URL: {url}")
             badge_url = None
+            product_name = "Unknown"
+            extracted_text = None
 
             context = await browser.new_context(
                 user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -70,7 +79,8 @@ async def test_multiple_urls_ocr(url_list):
                 soup = BeautifulSoup(html_content, "html.parser")
                 
                 name_elem = soup.find("h1")
-                print(f"📦 Product Name: {name_elem.text.strip() if name_elem else 'Unknown'}")
+                product_name = name_elem.text.strip() if name_elem else "Unknown"
+                print(f"📦 Product Name: {product_name}")
 
                 badge_div = soup.find("div", class_=lambda x: x and "imageSlider_badge_warpper" in x)
                 if badge_div:
@@ -105,17 +115,16 @@ async def test_multiple_urls_ocr(url_list):
 
                         img = img.resize((img.width * 4, img.height * 4), resample=Image.LANCZOS)
                         
-                        # Convert PIL Image to Numpy Array for EasyOCR
                         img_array = np.array(img)
                         
                         print("🧠 Running EasyOCR...")
                         results = reader.readtext(img_array)
-                        raw_text = " ".join([res[1] for res in results])
+                        extracted_text = " ".join([res[1] for res in results])
                         
                         print("-" * 40)
-                        print(f"📄 RAW TEXT EXTRACTED : '{raw_text.strip()}'")
+                        print(f"📄 RAW TEXT EXTRACTED : '{extracted_text.strip()}'")
                         
-                        label = get_condition_from_text(raw_text)
+                        label = get_condition_from_text(extracted_text)
                         print(f"✨ MAPPED CONDITION   : {label}")
                         print("-" * 40)
                     else:
@@ -123,7 +132,34 @@ async def test_multiple_urls_ocr(url_list):
                 except Exception as e:
                     print(f"❌ Error processing image: {e}")
 
+            # Append the iteration's result to our data list
+            scraped_data.append({
+                "product_name": product_name,
+                "url": url,
+                "text_extract": extracted_text
+            })
+
         await browser.close()
+
+    # --- Data Export ---
+    if scraped_data:
+        df = pl.DataFrame(scraped_data)
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        
+        # Save as CSV
+        csv_filename = f"ocr_results_{timestamp}.csv"
+        df.write_csv(csv_filename)
+        print(f"\n✅ Saved results to {csv_filename}")
+        
+        # Save as Excel 
+        try:
+            excel_filename = f"ocr_results_{timestamp}.xlsx"
+            df.write_excel(excel_filename)
+            print(f"✅ Saved results to {excel_filename}")
+        except ImportError:
+            print("💡 Note: Install a writer like 'xlsxwriter' to enable Excel export. CSV was generated successfully.")
+    else:
+        print("\n⚠️ No data was scraped to save.")
 
 if __name__ == "__main__":
     test_urls = [
